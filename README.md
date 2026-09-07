@@ -1,8 +1,8 @@
 # Azure DevOps ACR AKS Workshop
 
-Build confidence one run at a time: pipeline basics, real tests, container builds, and Kubernetes deployments. GitHub hosts the source; **Azure Pipelines runs the automation**. These files are not GitHub Actions workflows.
+Build confidence one run at a time: pipeline basics, real tests, container builds, and Kubernetes deployments. Import this public GitHub starter into **Azure Repos in your Azure DevOps project**, then use **Azure Pipelines** to run the automation. These files are not GitHub Actions workflows.
 
-**[Create your workshop copy](https://github.com/AkashAi7/azure-devops-acr-aks-workshop/generate)** | [Public starter](https://github.com/AkashAi7/azure-devops-acr-aks-workshop)
+**[Import into your project](#import-into-your-project)** | [Public starter](https://github.com/AkashAi7/azure-devops-acr-aks-workshop)
 
 ## Choose Your Route
 
@@ -20,10 +20,10 @@ Expand each demo for instructions and checkpoints. GitHub renders these checklis
 
 ### Participant Checklist
 
-- [ ] Create your own repository using **Use this template > Create a new repository**, or fork the starter.
-- [ ] Keep `app/`, `docker/`, and `pipelines/` at the repository root; do not nest the starter in another folder.
 - [ ] Confirm your Azure DevOps organization and assigned project with the facilitator.
-- [ ] Confirm you can create/run pipelines and authorize access to your GitHub copy.
+- [ ] Import this repository into your assigned project using the steps below.
+- [ ] Keep `app/`, `docker/`, and `pipelines/` at the repository root; do not nest the starter in another folder.
+- [ ] Confirm you can edit the imported Azure Repos repository and create/run pipelines in your project.
 - [ ] Obtain a unique participant identifier such as `student01`. Run only one workshop pipeline at a time per participant.
 
 The first two demos need no Azure service connection or Azure resources. Cloud demos use existing ACR and AKS resources and can incur charges. Nothing here provisions those resources automatically. Local Docker is not required: builds run remotely in ACR.
@@ -43,27 +43,35 @@ All starter pipelines use Microsoft-hosted `ubuntu-latest`. Adding self-hosted a
 
 </details>
 
+## Import Into Your Project
+
+1. Open your assigned project at `https://dev.azure.com/<organization>/<project>`.
+2. Select **Repos > Files**. On an empty repository page, choose **Import repository**. If a repository is already selected, open the repository dropdown and choose **Import repository** to create a separate imported repository.
+3. Select **Git** as the source type and enter this clone URL:
+
+	```text
+	https://github.com/AkashAi7/azure-devops-acr-aks-workshop.git
+	```
+
+4. Use a new repository name such as `workshop-student01`. The source is public; leave **Requires authentication** unchecked. Select **Import** and wait for completion.
+5. Open the imported repository, select `main`, and confirm `app/`, `docker/`, and `pipelines/` appear at the root.
+
+No participant GitHub account or GitHub pipeline connection is needed. If you cannot import, ask the project owner to grant the required repository-creation permission or perform the import for you. Do not overwrite an existing repository.
+
+Make all workshop edits and commits in this imported Azure Repos copy. Import is a one-time copy; later GitHub updates do not synchronize automatically. Importing does not create pipeline definitions, service connections, or Azure resources.
+
 ## Create And Run A Pipeline
 
 Repeat this process for each selected demo; you do not need to register all eight pipelines.
 
-1. In your Azure DevOps project, select **Pipelines > New pipeline > GitHub**.
-2. Authorize the GitHub connection for your own repository and select that repository.
+1. In your Azure DevOps project, select **Pipelines > New pipeline > Azure Repos Git**.
+2. Select the repository you imported into this project, such as `workshop-student01`.
 3. Choose **Existing Azure Pipelines YAML file**, select `main`, and enter the YAML path shown in the demo.
 4. Review the YAML. Save it, then run it, or choose **Run** if the wizard offers that action directly. For an Azure demo, finish Azure setup before this step.
 5. Rename the saved pipeline to a recognizable name, such as `student01-demo-1`. On later runs, open that pipeline and select **Run pipeline**, using the branch containing your changes.
 6. Open the run, select a job, and inspect its individual task logs. Wait for the **overall run** to show **Succeeded**, not just an individual green task.
 
-All eight YAML files specify `trigger: none` and `pr: none`. Commits do not automatically start them; keep UI trigger overrides and schedules disabled. If an authorization prompt appears, ask the project owner to authorize that specific pipeline, not every pipeline globally.
-
-<details>
-<summary>Alternative: use an Azure Repos copy</summary>
-
-Select **Repos > Files > Import repository** in your assigned Azure DevOps project. Use `https://github.com/AkashAi7/azure-devops-acr-aks-workshop.git` as the clone URL. Configure your participant values in that imported copy, then choose **Azure Repos Git** instead of **GitHub** when creating pipelines.
-
-Choose one source of truth for the session. An import is an independent copy; later GitHub commits do not synchronize automatically. Make changes in the repository your pipeline actually checks out.
-
-</details>
+All eight YAML files specify `trigger: none` and `pr: none`. Keep UI trigger overrides and schedules disabled. Azure Repos PR validation is controlled by branch build-validation policies, not YAML `pr`; leave automatic build-validation policies unconfigured for these manual workshop pipelines. If an authorization prompt appears, ask the project owner to authorize that specific pipeline, not every pipeline globally.
 
 ## Demo 1: Pipeline Basics
 
@@ -116,7 +124,7 @@ Choose one source of truth for the session. An import is an independent copy; la
 Complete this checkpoint before any cloud lab. Use only resources assigned by your facilitator.
 
 1. In **Project settings > Service connections**, create or select an **Azure Resource Manager** connection using workload identity federation. Ask the facilitator to handle any permissions you cannot grant.
-2. Confirm it has the required scope for the selected ACR operation and AKS credential retrieval, plus Kubernetes permissions to manage the assigned workloads. AKS itself needs permission to pull images from ACR. GitHub access and Azure access are separate authorizations.
+2. Confirm it has the required scope for the selected ACR operation and AKS credential retrieval, plus Kubernetes permissions to manage the assigned workloads. AKS itself needs permission to pull images from ACR. Azure Repos access and Azure resource access are separate authorizations.
 3. Edit [pipelines/workshop-variables.yml](pipelines/workshop-variables.yml) in the repository and branch your pipelines use. Replace all five placeholders and commit.
 
 | Variable | Enter |
@@ -128,7 +136,7 @@ Complete this checkpoint before any cloud lab. Use only resources assigned by yo
 | `participantName` | Unique lowercase letters and numbers, for example `student01` |
 | `aksNamespace` | Existing authorized namespace; defaults to `default` |
 
-With `student01`, generated names are `workshop-student01`, `nginx-student01`, and `app-student01`. Do not copy another participant's identifier. Keep credentials out of GitHub, logs, and chat.
+With `student01`, generated names are `workshop-student01`, `nginx-student01`, and `app-student01`. Do not copy another participant's identifier. Keep credentials out of repositories, logs, and chat.
 
 - [ ] All five placeholders are replaced in the pipeline's source branch.
 - [ ] My namespace already exists; these pipelines do not create it.
@@ -262,7 +270,7 @@ Open the first failing task and record its error, run URL, branch/commit, stage,
 | Symptom | First check |
 | --- | --- |
 | Queued; waiting for an agent | Organization's Microsoft-hosted parallel-job usage, entitlement, pool authorization, and service availability. More pipeline definitions do not add capacity. |
-| Checkout denied or wrong files | GitHub app/repository authorization, selected repository, branch, and root layout. |
+| Checkout denied or wrong files | Imported Azure Repos repository, selected branch, root layout, and pipeline build-service identity's Read permission on that repository. |
 | Validation says `REPLACE_WITH_*` | Edit and commit the shared variables in the source branch actually used by this run. |
 | Service connection missing or unauthorized | Exact connection name, correct Azure DevOps project, and authorization for this pipeline. |
 | ACR build/import denied or queued | Correct registry and identity permissions for that operation; network restrictions and ACR build capacity. |
