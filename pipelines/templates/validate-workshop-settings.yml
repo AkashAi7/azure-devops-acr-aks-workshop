@@ -1,0 +1,36 @@
+parameters:
+  - name: requireAks
+    type: boolean
+    default: false
+
+steps:
+  - bash: |
+      set -euo pipefail
+
+      check_value() {
+        local name="$1"
+        local value="$2"
+
+        if [[ -z "$value" || "$value" == REPLACE_WITH_* ]]; then
+          echo "##vso[task.logissue type=error]Set '$name' in pipelines/workshop-variables.yml before running this pipeline."
+          return 1
+        fi
+      }
+
+      check_value "azureSubscription" "$(azureSubscription)"
+      check_value "acrName" "$(acrName)"
+      check_value "participantName" "$(participantName)"
+
+      if [[ ! "$(participantName)" =~ ^[a-z0-9]+$ ]]; then
+        echo "##vso[task.logissue type=error]participantName must contain only lowercase letters and numbers."
+        exit 1
+      fi
+
+      require_aks="${{ parameters.requireAks }}"
+      if [[ "${require_aks,,}" == "true" ]]; then
+        check_value "aksResourceGroup" "$(aksResourceGroup)"
+        check_value "aksClusterName" "$(aksClusterName)"
+      fi
+
+      echo "Workshop settings are valid for participant: $(participantName)"
+    displayName: Validate workshop settings

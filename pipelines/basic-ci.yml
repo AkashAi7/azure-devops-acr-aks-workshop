@@ -1,0 +1,42 @@
+# ============================================================
+# PIPELINE 1: BASIC CI
+# Steps: install dependencies -> run tests -> archive -> publish
+# Azure access is not required.
+# ============================================================
+
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  # Pipeline settings - participants do not need to edit these.
+  nodeVersion: '20.x'
+  appDirectory: $(Build.SourcesDirectory)/app
+  artifactName: workshop-app
+
+steps:
+  - task: NodeTool@0
+    displayName: Use Node.js $(nodeVersion)
+    inputs:
+      versionSpec: $(nodeVersion)
+  - script: npm install
+    displayName: Install dependencies
+    workingDirectory: $(appDirectory)
+  - script: npm test
+    displayName: Run unit tests
+    workingDirectory: $(appDirectory)
+  - task: ArchiveFiles@2
+    displayName: Archive app
+    inputs:
+      rootFolderOrFile: $(appDirectory)
+      includeRootFolder: false
+      archiveType: zip
+      archiveFile: $(Build.ArtifactStagingDirectory)/$(artifactName).zip
+      replaceExistingArchive: true
+  - task: PublishPipelineArtifact@1
+    displayName: Publish artifact
+    inputs:
+      targetPath: $(Build.ArtifactStagingDirectory)/$(artifactName).zip
+      artifact: $(artifactName)

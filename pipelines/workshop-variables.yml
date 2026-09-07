@@ -1,0 +1,19 @@
+# ============================================================
+# EDIT ONLY THIS FILE BEFORE RUNNING THE WORKSHOP PIPELINES
+# ============================================================
+
+variables:
+  azureSubscription: REPLACE_WITH_SERVICE_CONNECTION
+  acrName: REPLACE_WITH_ACR_NAME
+  aksResourceGroup: REPLACE_WITH_AKS_RESOURCE_GROUP
+  aksClusterName: REPLACE_WITH_AKS_CLUSTER_NAME
+
+  # Project identifier: lowercase letters and numbers only.
+  participantName: REPLACE_WITH_PARTICIPANT_NAME
+
+  aksNamespace: default
+
+  # Generated names: do not edit these values.
+  imageRepository: workshop-$(participantName)
+  nginxWorkloadName: nginx-$(participantName)
+  appWorkloadName: app-$(participantName)

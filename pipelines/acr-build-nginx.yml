@@ -1,0 +1,46 @@
+# ============================================================
+# PIPELINE 2: BUILD NGINX IN ACR
+# Steps: validate settings -> build remotely in ACR -> show image
+# Before running: edit pipelines/workshop-variables.yml once.
+# ============================================================
+
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  # Shared participant settings.
+  - template: workshop-variables.yml
+  # Pipeline settings - participants do not need to edit these.
+  - name: baseImage
+    value: mcr.microsoft.com/azurelinux/base/nginx:1.28
+  - name: dockerfilePath
+    value: $(Build.SourcesDirectory)/docker/Dockerfile.nginx
+  - name: buildContext
+    value: $(Build.SourcesDirectory)
+  - name: imageTag
+    value: $(Build.BuildId)
+
+steps:
+  - template: templates/validate-workshop-settings.yml
+  - task: AzureCLI@2
+    displayName: Build and push Nginx image to ACR
+    inputs:
+      azureSubscription: $(azureSubscription)
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -euo pipefail
+        az acr build \
+          --registry "$(acrName)" \
+          --image "$(imageRepository):$(imageTag)" \
+          --image "$(imageRepository):latest" \
+          --build-arg "BASE_IMAGE=$(baseImage)" \
+          --file "$(dockerfilePath)" \
+          "$(buildContext)"
+  - bash: |
+      echo "Pushed image: $(acrName).azurecr.io/$(imageRepository):$(imageTag)"
+      echo "Latest image: $(acrName).azurecr.io/$(imageRepository):latest"
+    displayName: Show pushed image

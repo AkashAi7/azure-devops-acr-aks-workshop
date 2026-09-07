@@ -1,0 +1,128 @@
+# ============================================================
+# PIPELINE 3: BUILD NGINX IN ACR AND DEPLOY TO AKS
+# Steps: validate -> build -> deploy -> verify rollout
+# Before running: edit pipelines/workshop-variables.yml once.
+# Prerequisite: AKS must be attached to ACR.
+# ============================================================
+
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  # Shared participant settings.
+  - template: workshop-variables.yml
+  # Pipeline settings - participants do not need to edit these.
+  - name: baseImage
+    value: mcr.microsoft.com/azurelinux/base/nginx:1.28
+  - name: dockerfilePath
+    value: $(Build.SourcesDirectory)/docker/Dockerfile.nginx
+  - name: buildContext
+    value: $(Build.SourcesDirectory)
+  - name: imageTag
+    value: $(Build.BuildId)
+
+stages:
+  - stage: Build
+    displayName: Build image
+    jobs:
+      - job: BuildImage
+        displayName: Build Nginx image
+        steps:
+          - template: templates/validate-workshop-settings.yml
+            parameters:
+              requireAks: true
+          - task: AzureCLI@2
+            displayName: Build and push Nginx image to ACR
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az acr build \
+                  --registry "$(acrName)" \
+                  --image "$(imageRepository):$(imageTag)" \
+                  --image "$(imageRepository):latest" \
+                  --build-arg "BASE_IMAGE=$(baseImage)" \
+                  --file "$(dockerfilePath)" \
+                  "$(buildContext)"
+          - bash: |
+              echo "Built image: $(acrName).azurecr.io/$(imageRepository):$(imageTag)"
+            displayName: Show built image
+
+  - stage: Deploy
+    displayName: Deploy to AKS
+    dependsOn: Build
+    jobs:
+      - job: DeployImage
+        displayName: Deploy Nginx image
+        steps:
+          - task: AzureCLI@2
+            displayName: Deploy Nginx to participant namespace
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az aks get-credentials \
+                  --resource-group "$(aksResourceGroup)" \
+                  --name "$(aksClusterName)" \
+                  --overwrite-existing
+
+                kubectl apply -f - <<EOF
+                apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: $(nginxWorkloadName)
+                  namespace: $(aksNamespace)
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: $(nginxWorkloadName)
+                  template:
+                    metadata:
+                      labels:
+                        app: $(nginxWorkloadName)
+                    spec:
+                      containers:
+                        - name: nginx
+                          image: $(acrName).azurecr.io/$(imageRepository):$(imageTag)
+                          ports:
+                            - containerPort: 80
+                          readinessProbe:
+                            httpGet:
+                              path: /
+                              port: 80
+                            initialDelaySeconds: 5
+                            periodSeconds: 10
+                ---
+                apiVersion: v1
+                kind: Service
+                metadata:
+                  name: $(nginxWorkloadName)
+                  namespace: $(aksNamespace)
+                spec:
+                  type: ClusterIP
+                  selector:
+                    app: $(nginxWorkloadName)
+                  ports:
+                    - port: 80
+                      targetPort: 80
+                EOF
+
+                if ! kubectl rollout status "deployment/$(nginxWorkloadName)" --namespace "$(aksNamespace)" --timeout 180s; then
+                  kubectl get pods --namespace "$(aksNamespace)" --output wide
+                  kubectl describe deployment "$(nginxWorkloadName)" --namespace "$(aksNamespace)"
+                  kubectl describe pods --namespace "$(aksNamespace)" --selector "app=$(nginxWorkloadName)"
+                  exit 1
+                fi
+                kubectl get deployment,pods,service --namespace "$(aksNamespace)" --selector "app=$(nginxWorkloadName)"
+          - bash: |
+              echo "Deployed image: $(acrName).azurecr.io/$(imageRepository):$(imageTag)"
+              echo "Namespace: $(aksNamespace)"
+            displayName: Show deployment result

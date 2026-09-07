@@ -1,0 +1,129 @@
+# ============================================================
+# OPTIONAL: BUILD NODE APP IN ACR AND DEPLOY TO AKS
+# Steps: validate -> build -> deploy -> verify rollout
+# Before running: edit pipelines/workshop-variables.yml once.
+# Prerequisite: AKS must be attached to ACR.
+# ============================================================
+
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  # Shared participant settings.
+  - template: workshop-variables.yml
+  # Pipeline settings - participants do not need to edit these.
+  - name: baseImage
+    value: mcr.microsoft.com/azurelinux/base/nodejs:20
+  - name: dockerfilePath
+    value: $(Build.SourcesDirectory)/docker/Dockerfile
+  - name: buildContext
+    value: $(Build.SourcesDirectory)
+  - name: imageTag
+    value: $(Build.BuildId)
+
+stages:
+  - stage: Build
+    displayName: Build app image
+    jobs:
+      - job: BuildImage
+        displayName: Build app image
+        steps:
+          - template: templates/validate-workshop-settings.yml
+            parameters:
+              requireAks: true
+          - task: AzureCLI@2
+            displayName: Build and push app image to ACR
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az acr build \
+                  --registry "$(acrName)" \
+                  --image "$(imageRepository):$(imageTag)" \
+                  --image "$(imageRepository):latest" \
+                  --build-arg "BASE_IMAGE=$(baseImage)" \
+                  --file "$(dockerfilePath)" \
+                  "$(buildContext)"
+          - bash: |
+              echo "Built image: $(acrName).azurecr.io/$(imageRepository):$(imageTag)"
+            displayName: Show built image
+
+  - stage: Deploy
+    displayName: Deploy app to AKS
+    dependsOn: Build
+    jobs:
+      - job: DeployApp
+        displayName: Deploy app image
+        steps:
+          - task: AzureCLI@2
+            displayName: Deploy app to participant namespace
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az aks get-credentials \
+                  --resource-group "$(aksResourceGroup)" \
+                  --name "$(aksClusterName)" \
+                  --overwrite-existing
+
+                kubectl apply -f - <<EOF
+                apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: $(appWorkloadName)
+                  namespace: $(aksNamespace)
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: $(appWorkloadName)
+                  template:
+                    metadata:
+                      labels:
+                        app: $(appWorkloadName)
+                    spec:
+                      containers:
+                        - name: app
+                          image: $(acrName).azurecr.io/$(imageRepository):$(imageTag)
+                          ports:
+                            - containerPort: 8080
+                          readinessProbe:
+                            httpGet:
+                              path: /health
+                              port: 8080
+                            initialDelaySeconds: 5
+                            periodSeconds: 10
+                ---
+                apiVersion: v1
+                kind: Service
+                metadata:
+                  name: $(appWorkloadName)
+                  namespace: $(aksNamespace)
+                spec:
+                  type: ClusterIP
+                  selector:
+                    app: $(appWorkloadName)
+                  ports:
+                    - port: 80
+                      targetPort: 8080
+                EOF
+
+                if ! kubectl rollout status "deployment/$(appWorkloadName)" --namespace "$(aksNamespace)" --timeout 180s; then
+                  kubectl get pods --namespace "$(aksNamespace)" --output wide
+                  kubectl describe deployment "$(appWorkloadName)" --namespace "$(aksNamespace)"
+                  kubectl describe pods --namespace "$(aksNamespace)" --selector "app=$(appWorkloadName)"
+                  kubectl logs --namespace "$(aksNamespace)" --selector "app=$(appWorkloadName)" --tail 100 || true
+                  exit 1
+                fi
+                kubectl get deployment,pods,service --namespace "$(aksNamespace)" --selector "app=$(appWorkloadName)"
+          - bash: |
+              echo "Deployed image: $(acrName).azurecr.io/$(imageRepository):$(imageTag)"
+              echo "Namespace: $(aksNamespace)"
+            displayName: Show deployment result

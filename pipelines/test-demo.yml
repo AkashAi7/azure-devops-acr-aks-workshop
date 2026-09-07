@@ -1,0 +1,47 @@
+# ============================================================
+# MINIMAL DEMO PIPELINE
+# Steps: print values -> simulate tests -> publish -> simulate deploy
+# Azure access is not required.
+# ============================================================
+
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  appName: 'workshop-demo'
+  environmentName: 'training'
+
+stages:
+  - stage: Build
+    displayName: Build
+    jobs:
+      - job: BuildJob
+        displayName: Build job
+        steps:
+          - bash: echo "Building $(appName) for $(environmentName)..."
+            displayName: Print variables
+          - bash: echo "Tests passed."
+            displayName: Simulate tests
+          - bash: |
+              set -euo pipefail
+              mkdir -p "$(Build.ArtifactStagingDirectory)"
+              echo "Build artifact for $(appName) - $(environmentName)" > "$(Build.ArtifactStagingDirectory)/build-output.txt"
+            displayName: Create sample artifact
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/build-output.txt
+              artifact: demo-output
+            displayName: Publish sample artifact
+
+  - stage: Deploy
+    displayName: Simulate deployment
+    dependsOn: Build
+    jobs:
+      - job: DeployJob
+        displayName: Deploy job
+        steps:
+          - bash: echo "Deployment simulation completed for $(appName)."
+            displayName: Simulate deployment

@@ -1,0 +1,41 @@
+# ============================================================
+# OPTIONAL: IMPORT NGINX FROM MCR TO ACR
+# Steps: validate settings -> import verified MCR image -> show image
+# Before running: edit pipelines/workshop-variables.yml once.
+# ============================================================
+
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  # Shared participant settings.
+  - template: workshop-variables.yml
+  # Pipeline settings - participants do not need to edit these.
+  - name: sourceImage
+    value: mcr.microsoft.com/azurelinux/base/nginx:1.28
+  - name: imageTag
+    value: $(Build.BuildId)
+
+steps:
+  - template: templates/validate-workshop-settings.yml
+  - task: AzureCLI@2
+    displayName: Import Nginx image to ACR
+    inputs:
+      azureSubscription: $(azureSubscription)
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -euo pipefail
+        az acr import \
+          --name "$(acrName)" \
+          --source "$(sourceImage)" \
+          --force \
+          --image "$(imageRepository):$(imageTag)" \
+          --image "$(imageRepository):latest"
+  - bash: |
+      echo "Imported image: $(acrName).azurecr.io/$(imageRepository):$(imageTag)"
+      echo "Latest image: $(acrName).azurecr.io/$(imageRepository):latest"
+    displayName: Show imported image

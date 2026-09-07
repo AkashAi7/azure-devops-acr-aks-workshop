@@ -1,0 +1,131 @@
+# ============================================================
+# OPTIONAL ADVANCED PIPELINE
+# Stages: test application -> build image in ACR -> deploy to AKS
+# Before running: edit pipelines/workshop-variables.yml once.
+# ============================================================
+
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  # Shared participant settings.
+  - template: workshop-variables.yml
+  # Pipeline settings - participants do not need to edit these.
+  - name: nodeVersion
+    value: '20.x'
+  - name: appDirectory
+    value: $(Build.SourcesDirectory)/app
+  - name: baseImage
+    value: mcr.microsoft.com/azurelinux/base/nodejs:20
+  - name: dockerfilePath
+    value: $(Build.SourcesDirectory)/docker/Dockerfile
+  - name: imageTag
+    value: $(Build.BuildId)
+
+stages:
+  - stage: Test
+    displayName: Test application
+    jobs:
+      - job: UnitTests
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(nodeVersion)
+            displayName: Use Node.js $(nodeVersion)
+          - script: npm install
+            workingDirectory: $(appDirectory)
+            displayName: Install dependencies
+          - script: npm test
+            workingDirectory: $(appDirectory)
+            displayName: Run unit tests
+
+  - stage: Build
+    displayName: Build app image
+    dependsOn: Test
+    jobs:
+      - job: BuildImage
+        steps:
+          - template: templates/validate-workshop-settings.yml
+            parameters:
+              requireAks: true
+          - task: AzureCLI@2
+            displayName: Build and push app image to ACR
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az acr build \
+                  --registry "$(acrName)" \
+                  --image "$(imageRepository):$(imageTag)" \
+                  --image "$(imageRepository):latest" \
+                  --build-arg "BASE_IMAGE=$(baseImage)" \
+                  --file "$(dockerfilePath)" \
+                  "$(Build.SourcesDirectory)"
+
+  - stage: Deploy
+    displayName: Deploy app to AKS
+    dependsOn: Build
+    jobs:
+      - job: DeployApp
+        steps:
+          - task: AzureCLI@2
+            displayName: Create or update app in participant namespace
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az aks get-credentials \
+                  --resource-group "$(aksResourceGroup)" \
+                  --name "$(aksClusterName)" \
+                  --overwrite-existing
+                kubectl apply -f - <<EOF
+                apiVersion: apps/v1
+                kind: Deployment
+                metadata:
+                  name: $(appWorkloadName)
+                  namespace: $(aksNamespace)
+                spec:
+                  replicas: 1
+                  selector:
+                    matchLabels:
+                      app: $(appWorkloadName)
+                  template:
+                    metadata:
+                      labels:
+                        app: $(appWorkloadName)
+                    spec:
+                      containers:
+                        - name: app
+                          image: $(acrName).azurecr.io/$(imageRepository):$(imageTag)
+                          ports:
+                            - containerPort: 8080
+                          readinessProbe:
+                            httpGet:
+                              path: /health
+                              port: 8080
+                            initialDelaySeconds: 5
+                            periodSeconds: 10
+                ---
+                apiVersion: v1
+                kind: Service
+                metadata:
+                  name: $(appWorkloadName)
+                  namespace: $(aksNamespace)
+                spec:
+                  type: ClusterIP
+                  selector:
+                    app: $(appWorkloadName)
+                  ports:
+                    - port: 80
+                      targetPort: 8080
+                EOF
+                kubectl rollout status "deployment/$(appWorkloadName)" \
+                  --namespace "$(aksNamespace)" \
+                  --timeout 180s
